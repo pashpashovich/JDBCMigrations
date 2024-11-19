@@ -13,7 +13,6 @@ public class MigrationTool {
             return;
         }
         try {
-            logger.info(args[0].toLowerCase());
             switch (args[0].toLowerCase()) {
                 case "migrate":
                     logger.info("Запуск миграции...");
@@ -21,13 +20,37 @@ public class MigrationTool {
                     logger.info("Миграции успешно применены.");
                     break;
                 case "rollback":
-                    logger.info("Запуск отката...");
-                    MigrationManager.rollback();
-                    logger.info("Откат успешно выполнен.");
+                    if (args.length < 2) {
+                        logger.error("Укажите тег для отката (например, rollback <tag>).");
+                        return;
+                    }
+                    String tag = args[1];
+                    logger.info("Откат миграций после тега: {}", tag);
+                    MigrationManager.rollbackToTag(tag);
+                    break;
+
+                case "rollback-to-date":
+                    if (args.length < 2) {
+                        logger.error("Укажите дату для отката (например, rollback-to-date YYYY-MM-DD).");
+                        return;
+                    }
+                    String date = args[1];
+                    logger.info("Откат миграций до даты: {}", date);
+                    MigrationManager.rollbackToDate(date);
+                    break;
+
+                case "rollback-count":
+                    if (args.length < 2) {
+                        logger.error("Укажите количество миграций для отката (например, rollback-count <count>).");
+                        return;
+                    }
+                    int count = Integer.parseInt(args[1]);
+                    logger.info("Откат последних {} миграций", count);
+                    MigrationManager.rollbackCount(count);
                     break;
                 case "status":
                     logger.info("Проверка статуса базы данных...");
-                    MigrationManager.status();
+                    MigrationManager.info();
                     break;
                 default:
                     logger.warn("Неизвестная команда: {}", args[0]);
