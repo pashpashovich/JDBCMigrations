@@ -1,6 +1,6 @@
 package by.innowise.db;
 
-import by.innowise.exception.BadAppPropertiesException;
+import by.innowise.exception.PropertiesException;
 import by.innowise.exception.NotFoundException;
 
 import java.io.IOException;
@@ -28,7 +28,7 @@ public class PropertiesUtils {
             }
             properties.load(input);
         } catch (IOException e) {
-            throw new BadAppPropertiesException("Ошибка загрузки application.properties");
+            throw new PropertiesException("Ошибка загрузки application.properties");
         }
     }
 

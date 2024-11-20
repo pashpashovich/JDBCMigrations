@@ -1,8 +1,9 @@
 package by.innowise.migrations;
 
 import by.innowise.db.ConnectionManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import by.innowise.db.PropertiesUtils;
+import by.innowise.exception.MigrationException;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.io.IOException;
@@ -11,15 +12,26 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
+
+import static by.innowise.migrations.MigrationExecutor.applyMigration;
+import static by.innowise.migrations.MigrationExecutor.ensureLockTableExists;
+import static by.innowise.migrations.MigrationExecutor.isDatabaseLocked;
+import static by.innowise.migrations.MigrationExecutor.lockDatabase;
+import static by.innowise.migrations.MigrationExecutor.unlockDatabase;
 
 /**
  * Класс для работы с примененными и новыми миграциями
  */
+@Slf4j
 public class MigrationManager {
 
-    private static final Logger logger = LoggerFactory.getLogger(MigrationManager.class);
     public static final String DIRECTORY_PATH = "migrations/";
+    public static final String VERSION = "version";
+    public static final String DB_USERNAME = "db.username";
+    public static final String MSG = "База данных уже заблокирована другим процессом. Миграция невозможна";
 
     private MigrationManager() {
     }
@@ -30,6 +42,12 @@ public class MigrationManager {
     public static void migrate() {
         try (Connection connection = ConnectionManager.getConnection()) {
             connection.setAutoCommit(false);
+            ensureLockTableExists(connection);
+            if (isDatabaseLocked(connection)) {
+                log.warn(MSG);
+                return;
+            }
+            lockDatabase(connection, PropertiesUtils.getProperty(DB_USERNAME));
             ensureHistoryTableExists(connection);
             List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
             for (File file : migrationFiles) {
@@ -37,9 +55,10 @@ public class MigrationManager {
                     applyMigration(connection, file);
                 }
             }
+            unlockDatabase(connection);
             connection.commit();
         } catch (Exception e) {
-            logger.error("Ошибка во время миграции.", e);
+            log.error("Ошибка во время миграции.", e);
         }
     }
 
@@ -51,45 +70,125 @@ public class MigrationManager {
     public static void rollbackToTag(String tag) {
         try (Connection connection = ConnectionManager.getConnection()) {
             connection.setAutoCommit(false);
+            ensureLockTableExists(connection);
+            if (isDatabaseLocked(connection)) {
+                log.warn(MSG);
+                return;
+            }
+            lockDatabase(connection, PropertiesUtils.getProperty((DB_USERNAME)));
             clearDatabase(connection);
             ensureHistoryTableExists(connection);
             List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
             for (File file : migrationFiles) {
                 String version = MigrationFileReader.extractVersion(file);
                 if (version.compareTo(tag) > 0) {
-                    logger.info("Достигнута указанная версия {}. Остановка выполнения миграций.", tag);
+                    log.info("Достигнута указанная версия {}. Остановка выполнения миграций.", tag);
                     break;
                 }
                 applyMigration(connection, file);
             }
             markMigrationsAsRevertedAfterTag(connection, tag);
+            unlockDatabase(connection);
             connection.commit();
-            logger.info("Откат до версии {} успешно выполнен.", tag);
+            log.info("Откат до версии {} успешно выполнен.", tag);
         } catch (Exception e) {
-            logger.error("Ошибка при выполнении отката до версии.", e);
+            log.error("Ошибка при выполнении отката до версии.", e);
         }
     }
 
-
     /**
-     * Метод, который откатывает БД к дате date
+     * Метод, который отменяет все миграции после date
      *
      * @param date - дата, к которой необходимо откатить БД
      */
     public static void rollbackToDate(String date) {
         try (Connection connection = ConnectionManager.getConnection()) {
             connection.setAutoCommit(false);
+            ensureLockTableExists(connection);
+            if (isDatabaseLocked(connection)) {
+                log.warn(MSG);
+                return;
+            }
+            lockDatabase(connection, PropertiesUtils.getProperty((DB_USERNAME)));
+            Timestamp rollbackTimestamp = parseDateToTimestamp(date);
             clearDatabase(connection);
             ensureHistoryTableExists(connection);
             List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
             for (File file : migrationFiles) {
-                applyMigration(connection, file);
+                String version = MigrationFileReader.extractVersion(file);
+                String appliedAtQuery = "SELECT applied_at FROM migration_history WHERE version = ? AND reverted = FALSE";
+                applyMigrations(file, connection, appliedAtQuery, version, rollbackTimestamp);
             }
-            markMigrationsAsRevertedAfterDate(connection, date);
+            String updateQuery = """
+                        UPDATE migration_history
+                        SET reverted = TRUE
+                        WHERE applied_at > ?;
+                    """;
+            try (PreparedStatement ps = connection.prepareStatement(updateQuery)) {
+                ps.setTimestamp(1, rollbackTimestamp);
+                int updatedRows = ps.executeUpdate();
+                if (updatedRows > 0) {
+                    log.info("Откат миграций, выполненных после даты {}", rollbackTimestamp);
+                } else {
+                    log.info("Миграций после даты {} не найдено.", rollbackTimestamp);
+                }
+            }
+            unlockDatabase(connection);
             connection.commit();
-            logger.info("Откат миграций до даты {} успешно выполнен.", date);
+        } catch (SQLException e) {
+            log.error("Ошибка при выполнении отката до даты.", e);
+        }
+    }
+
+    /**
+     * Метод, проводящий откат БД на заданное количество миграций
+     *
+     * @param count - количество миграций, на которое надо откатить
+     */
+    public static void rollbackCount(int count) {
+        try (Connection connection = ConnectionManager.getConnection()) {
+            connection.setAutoCommit(false);
+            ensureLockTableExists(connection);
+            if (isDatabaseLocked(connection)) {
+                log.warn("База данных уже заблокирована другим процессом. Миграция невозможна.");
+                return;
+            }
+            lockDatabase(connection, PropertiesUtils.getProperty((DB_USERNAME)));
+            String selectQuery = """
+                        SELECT id, version
+                        FROM migration_history
+                        WHERE reverted = FALSE
+                        ORDER BY version DESC
+                        LIMIT ?;
+                    """;
+            try (PreparedStatement ps = connection.prepareStatement(selectQuery)) {
+                ps.setInt(1, count);
+                try (ResultSet rs = ps.executeQuery()) {
+                    List<String> versionsToRollback = new ArrayList<>();
+                    while (rs.next()) {
+                        versionsToRollback.add(rs.getString(VERSION));
+                    }
+                    if (versionsToRollback.isEmpty()) {
+                        log.info("Нет миграций для отката");
+                        return;
+                    }
+                    clearDatabase(connection);
+                    ensureHistoryTableExists(connection);
+                    List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
+                    for (File file : migrationFiles) {
+                        String version = MigrationFileReader.extractVersion(file);
+                        if (!versionsToRollback.contains(version) && isMigrationApplied(connection, file)) {
+                            applyMigration(connection, file);
+                        }
+                    }
+                    markMigrationsAsReverted(connection, versionsToRollback);
+                }
+            }
+            unlockDatabase(connection);
+            connection.commit();
+            log.info("Откат последних {} миграций успешно выполнен.", count);
         } catch (Exception e) {
-            logger.error("Ошибка при выполнении отката до даты.", e);
+            log.error("Ошибка при выполнении отката последних миграций.", e);
         }
     }
 
@@ -98,7 +197,13 @@ public class MigrationManager {
      */
     public static void info() {
         try (Connection connection = ConnectionManager.getConnection()) {
-            logger.info("Получение статуса базы данных...");
+            ensureLockTableExists(connection);
+            if (isDatabaseLocked(connection)) {
+                log.warn("База данных уже заблокирована другим процессом. Миграция невозможна.");
+                return;
+            }
+            lockDatabase(connection, PropertiesUtils.getProperty((DB_USERNAME)));
+            log.info("Получение статуса базы данных...");
             String currentVersionQuery = """
                         SELECT version FROM migration_history
                         WHERE reverted = FALSE
@@ -107,10 +212,10 @@ public class MigrationManager {
             try (PreparedStatement ps = connection.prepareStatement(currentVersionQuery)) {
                 ResultSet rs = ps.executeQuery();
                 if (rs.next()) {
-                    String currentVersion = rs.getString("version");
-                    logger.info("Актуальная версия базы данных: {}", currentVersion);
+                    String currentVersion = rs.getString(VERSION);
+                    log.info("Актуальная версия базы данных: {}", currentVersion);
                 } else {
-                    logger.info("Миграции не применялись. База данных находится в начальном состоянии.");
+                    log.info("Миграции не применялись. База данных находится в начальном состоянии.");
                 }
             }
             String allMigrationsQuery = """
@@ -120,58 +225,33 @@ public class MigrationManager {
                     """;
             try (PreparedStatement ps = connection.prepareStatement(allMigrationsQuery)) {
                 ResultSet rs = ps.executeQuery();
-                logger.info("Список миграций:");
+                log.info("Список миграций:");
                 while (rs.next()) {
-                    String version = rs.getString("version");
+                    String version = rs.getString(VERSION);
                     String description = rs.getString("description");
                     String appliedAt = rs.getTimestamp("applied_at").toString();
                     boolean reverted = rs.getBoolean("reverted");
 
-                    logger.info("  - Версия: {}, Описание: {}, Применена: {}, Откатана: {}",
+                    log.info("  - Версия: {}, Описание: {}, Применена: {}, Откатана: {}",
                             version, description, appliedAt, reverted ? "Да" : "Нет");
                 }
+                unlockDatabase(connection);
             }
         } catch (SQLException e) {
-            logger.error("Ошибка при получении статуса базы данных.", e);
+            log.error("Ошибка при получении статуса базы данных.", e);
         }
     }
 
 
-    private static boolean isMigrationApplied(Connection connection, File file) throws SQLException {
-        String version = MigrationFileReader.extractVersion(file);
-        String query = "SELECT COUNT(*) FROM migration_history WHERE version = ? AND reverted = FALSE";
-        try (PreparedStatement ps = connection.prepareStatement(query)) {
-            ps.setString(1, version);
-            ResultSet rs = ps.executeQuery();
-            rs.next();
-            return rs.getInt(1) > 0;
-        }
-    }
-
-    private static void applyMigration(Connection connection, File file) throws SQLException, IOException {
-        String sql = MigrationFileReader.readSQL(file);
-        long startTime = System.currentTimeMillis();
-        MigrationExecutor.executeQuery(connection, sql);
-        long executionTime = System.currentTimeMillis() - startTime;
-        String insertHistorySQL = """
-                    INSERT INTO migration_history (version, description, script, checksum, execution_time, success, reverted)
-                    VALUES (?, ?, ?, ?, ?, ?, FALSE)
-                    ON CONFLICT (version) DO UPDATE SET
-                    description = EXCLUDED.description,
-                    script = EXCLUDED.script,
-                    checksum = EXCLUDED.checksum,
-                    execution_time = EXCLUDED.execution_time,
-                    success = EXCLUDED.success,
-                    reverted = FALSE;
-                """;
-        try (PreparedStatement ps = connection.prepareStatement(insertHistorySQL)) {
-            ps.setString(1, MigrationFileReader.extractVersion(file));
-            ps.setString(2, "Migration " + file.getName());
-            ps.setString(3, file.getName());
-            ps.setInt(4, sql.hashCode());
-            ps.setLong(5, executionTime);
-            ps.setBoolean(6, true);
-            ps.executeUpdate();
+    private static void markMigrationsAsReverted(Connection connection, List<String> versions) throws SQLException {
+        String updateQuery = "UPDATE migration_history SET reverted = TRUE WHERE version = ?";
+        try (PreparedStatement ps = connection.prepareStatement(updateQuery)) {
+            for (String version : versions) {
+                ps.setString(1, version);
+                ps.addBatch();
+            }
+            int[] updateCounts = ps.executeBatch();
+            log.info("Помечено как откатанные: {} миграций.", updateCounts.length);
         }
     }
 
@@ -191,77 +271,76 @@ public class MigrationManager {
                 """;
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createTableSQL);
-            logger.info("Таблица 'migration_history' проверена или успешно создана.");
+            log.info("Таблица 'migration_history' проверена или успешно создана.");
         } catch (SQLException e) {
-            logger.error("Ошибка при создании таблицы 'migration_history'.", e);
+            log.error("Ошибка при создании таблицы 'migration_history'.", e);
         }
     }
 
+    private static boolean isMigrationApplied(Connection connection, File file) throws SQLException {
+        String version = MigrationFileReader.extractVersion(file);
+        String query = "SELECT COUNT(*) FROM migration_history WHERE version = ? AND reverted = FALSE";
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, version);
+            ResultSet rs = ps.executeQuery();
+            rs.next();
+            return rs.getInt(1) > 0;
+        }
+    }
+
+    private static void applyMigrations(File file, Connection connection, String appliedAtQuery, String version, Timestamp rollbackTimestamp) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(appliedAtQuery)) {
+            ps.setString(1, version);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next() && rs.getTimestamp("applied_at").before(rollbackTimestamp)) {
+                applyMigration(connection, file);
+            }
+        } catch (IOException e) {
+            throw new MigrationException("Что-то не так с выполнением миграций...");
+        }
+    }
 
     private static void markMigrationsAsRevertedAfterTag(Connection connection, String tag) throws SQLException {
         String updateQuery = "UPDATE migration_history SET reverted = TRUE WHERE version > ?";
         try (PreparedStatement ps = connection.prepareStatement(updateQuery)) {
             ps.setString(1, tag);
             ps.executeUpdate();
-            logger.info("Миграции после версии {} помечены как откатанные.", tag);
+            log.info("Миграции после версии {} помечены как откатанные.", tag);
         }
     }
 
-    private static void markMigrationsAsRevertedAfterDate(Connection connection, String date) throws SQLException {
-        String updateQuery = "UPDATE migration_history SET reverted = TRUE WHERE applied_at > ?";
-        try (PreparedStatement ps = connection.prepareStatement(updateQuery)) {
-            ps.setString(1, date);
-            ps.executeUpdate();
-            logger.info("Миграции, выполненные после даты {}, помечены как откатанные.", date);
-        }
-    }
-
-    public static void rollbackCount(int count) {
-        try (Connection connection = ConnectionManager.getConnection()) {
-            connection.setAutoCommit(false);
-            clearDatabase(connection);
-            ensureHistoryTableExists(connection);
-            List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
-            for (int i = 0; i < migrationFiles.size() - count; i++) {
-                applyMigration(connection, migrationFiles.get(i));
+    private static Timestamp parseDateToTimestamp(String date) {
+        try {
+            if (date.contains("T")) {
+                date = date.replace("T", " ");
             }
-            markLastNReverted(connection, count);
-            connection.commit();
-            logger.info("Откат последних {} миграций успешно выполнен.", count);
-        } catch (Exception e) {
-            logger.error("Ошибка при выполнении отката последних миграций.", e);
-        }
-    }
+            if (date.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                date += " 00:00:00";
+            }
 
-    private static void markLastNReverted(Connection connection, int count) throws SQLException {
-        String updateQuery = """
-                    UPDATE migration_history SET reverted = TRUE
-                    WHERE id IN (SELECT id FROM migration_history ORDER BY applied_at DESC LIMIT ?);
-                """;
-        try (PreparedStatement ps = connection.prepareStatement(updateQuery)) {
-            ps.setInt(1, count);
-            ps.executeUpdate();
-            logger.info("Последние {} миграций помечены как откатанные.", count);
+            return Timestamp.valueOf(date);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Неверный формат даты, используйте формат 'yyyy-MM-dd HH:mm:ss' или 'yyyy-MM-dd'.", e);
         }
     }
 
     private static void clearDatabase(Connection connection) {
-        logger.info("Очистка базы данных...");
+        log.info("Очистка базы данных...");
         try (Statement stmt = connection.createStatement()) {
             String dropTablesSQL = """
                         DO $$
                         DECLARE
                             r RECORD;
                         BEGIN
-                            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'migration_history') LOOP
+                            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'migration_history' AND tablename != 'migration_lock') LOOP
                                 EXECUTE 'DROP TABLE IF EXISTS ' || r.tablename || ' CASCADE';
                             END LOOP;
                         END $$;
                     """;
             stmt.execute(dropTablesSQL);
-            logger.info("Все таблицы, кроме 'migration_history', успешно удалены.");
+            log.info("Все таблицы, кроме 'migration_history' и 'migration_lock', успешно удалены.");
         } catch (SQLException e) {
-            logger.error("Ошибка при очистке базы данных.", e);
+            log.error("Ошибка при очистке базы данных.", e);
         }
     }
 }
