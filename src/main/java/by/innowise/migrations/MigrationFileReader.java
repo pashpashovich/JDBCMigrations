@@ -1,5 +1,8 @@
 package by.innowise.migrations;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -12,11 +15,8 @@ import java.util.Objects;
 /**
  * Класс для поиска файлов миграций в ресурсах или внешних источниках
  */
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class MigrationFileReader {
-
-    private MigrationFileReader() {
-    }
-
     /**
      * Метод, которых находит файлы миграций
      *

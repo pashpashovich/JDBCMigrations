@@ -1,7 +1,9 @@
 package by.innowise.db;
 
-import by.innowise.exception.PropertiesException;
 import by.innowise.exception.NotFoundException;
+import by.innowise.exception.PropertiesException;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,16 +12,12 @@ import java.util.Properties;
 /**
  * Класс для чтения конфигурации из application.properties
  */
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class PropertiesUtils {
     /**
      * Подкласс Hashtable для загрузки свойств
      */
     private static final Properties properties = new Properties();
-
-    private PropertiesUtils() {
-
-    }
-
 
     static {
         try (InputStream input = PropertiesUtils.class.getClassLoader().getResourceAsStream("application.properties")) {
@@ -34,6 +32,7 @@ public class PropertiesUtils {
 
     /**
      * Метод, возвращающий значение свойства по ключу
+     *
      * @param key - ключ свойства
      * @return - значение свойства
      */

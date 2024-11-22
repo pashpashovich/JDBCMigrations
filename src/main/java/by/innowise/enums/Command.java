@@ -3,6 +3,9 @@ package by.innowise.enums;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * Enum, представляющий собой возможные команды из CLI
+ */
 @Getter
 @RequiredArgsConstructor
 public enum Command {
@@ -14,6 +17,11 @@ public enum Command {
 
     private final String commandName;
 
+    /**
+     * Метод, возвращающий enum из строкового представления команды
+     * @param commandName - строковое представление команды
+     * @return - команда типа enum
+     */
     public static Command fromString(String commandName) {
         for (Command command : Command.values()) {
             if (command.commandName.equalsIgnoreCase(commandName)) {
