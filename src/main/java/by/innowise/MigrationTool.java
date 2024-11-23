@@ -1,7 +1,9 @@
 package by.innowise;
 
+import by.innowise.db.ConnectionManager;
 import by.innowise.enums.Command;
 import by.innowise.migrations.MigrationManager;
+import by.innowise.report.MigrationReportGenerator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -12,7 +14,7 @@ public class MigrationTool {
 
     public static void main(String[] args) {
         if (args.length == 0) {
-            log.info("Команды: migrate, rollback, rollback-to-date, rollback-count, info");
+            log.info("Команды: migrate, rollback, rollback-to-date, rollback-count, info,report_csv,report_json");
             return;
         }
         try {
@@ -52,6 +54,14 @@ public class MigrationTool {
                 break;
             case INFO:
                 executeWithLogging("info", MigrationManager::info);
+                break;
+            case REPORT_CSV:
+                log.info("Генерация CSV отчета о миграциях...");
+                MigrationReportGenerator.generateCsvReport(ConnectionManager.getConnection());
+                break;
+            case REPORT_JSON:
+                log.info("Генерация JSON отчета о миграциях...");
+                MigrationReportGenerator.generateJsonReport(ConnectionManager.getConnection());
                 break;
         }
     }

@@ -1,0 +1,6 @@
+Version,Description,Success,Reverted,Applied At
+1,Migration V1__Create_users_table.sql,true,false,2024-11-23 19:17:20.873793
+2,Migration V2__Insert_into_users.sql,true,false,2024-11-23 19:17:20.873793
+3,Migration V3__Create_roles_table.sql,true,false,2024-11-23 19:17:20.873793
+4,Migration V4__Add_foreign_key_to_users.sql,true,false,2024-11-23 19:17:20.873793
+5,Migration V5__Insert_roles.sql,true,false,2024-11-23 19:17:20.873793

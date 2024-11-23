@@ -13,7 +13,9 @@ public enum Command {
     ROLLBACK("rollback"),
     ROLLBACK_TO_DATE("rollback-to-date"),
     ROLLBACK_COUNT("rollback-count"),
-    INFO("info");
+    INFO("info"),
+    REPORT_JSON("report_json"),
+    REPORT_CSV("report_csv");
 
     private final String commandName;
 

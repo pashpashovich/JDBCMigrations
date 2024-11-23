@@ -1,0 +1,31 @@
+[ {
+  "version" : "1",
+  "description" : "Migration V1__Create_users_table.sql",
+  "success" : true,
+  "reverted" : false,
+  "appliedAt" : "2024-11-23 19:17:20.873793"
+}, {
+  "version" : "2",
+  "description" : "Migration V2__Insert_into_users.sql",
+  "success" : true,
+  "reverted" : false,
+  "appliedAt" : "2024-11-23 19:17:20.873793"
+}, {
+  "version" : "3",
+  "description" : "Migration V3__Create_roles_table.sql",
+  "success" : true,
+  "reverted" : false,
+  "appliedAt" : "2024-11-23 19:17:20.873793"
+}, {
+  "version" : "4",
+  "description" : "Migration V4__Add_foreign_key_to_users.sql",
+  "success" : true,
+  "reverted" : false,
+  "appliedAt" : "2024-11-23 19:17:20.873793"
+}, {
+  "version" : "5",
+  "description" : "Migration V5__Insert_roles.sql",
+  "success" : true,
+  "reverted" : false,
+  "appliedAt" : "2024-11-23 19:17:20.873793"
+} ]
