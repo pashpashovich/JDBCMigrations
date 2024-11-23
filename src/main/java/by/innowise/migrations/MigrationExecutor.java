@@ -1,5 +1,6 @@
 package by.innowise.migrations;
 
+import by.innowise.db.PropertiesUtils;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +18,7 @@ import java.sql.Statement;
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class MigrationExecutor {
-    public static final String INSERT_HISTORY_SQL = """
+    private static final String INSERT_HISTORY_SQL = """
                 INSERT INTO migration_history (version, description, script, checksum, execution_time, success, reverted, applied_at)
                 VALUES (?, ?, ?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP)
                 ON CONFLICT (version) DO UPDATE SET
@@ -29,21 +30,11 @@ public class MigrationExecutor {
                     reverted = FALSE,
                     applied_at = CASE WHEN migration_history.reverted = TRUE THEN CURRENT_TIMESTAMP ELSE migration_history.applied_at END;
             """;
-    public static final String UNLOCK_ALL_SQL = "SELECT pg_advisory_unlock_all()";
+    private static final String UNLOCK_ALL_SQL = "SELECT pg_advisory_unlock_all()";
     /**
      * Уникальный идентификатор блокировки
      */
     private static final int LOCK_ID = 1;
-    /**
-     * Задержка между попытками блокировки
-     */
-    private static final int RETRY_DELAY_MS = 500;
-
-    /**
-     * Тайм-аут по умолчанию
-     */
-    private static final int DEFAULT_TIMEOUT_SECONDS = 10;
-
 
     /**
      * Выполняет миграцию из указанного SQL-файла.
@@ -86,13 +77,13 @@ public class MigrationExecutor {
                     return;
                 }
                 long elapsedTime = (System.currentTimeMillis() - startTime) / 1000;
-                if (elapsedTime > DEFAULT_TIMEOUT_SECONDS) {
-                    log.warn("Не удалось получить блокировку за {} секунд. Принудительное снятие блокировки.", DEFAULT_TIMEOUT_SECONDS);
+                if (elapsedTime > Long.parseLong(PropertiesUtils.getProperty("migrations.lock_retry_timeout_s"))) {
+                    log.warn("Не удалось получить блокировку за {} секунд. Принудительное снятие блокировки.", PropertiesUtils.getProperty("migrations.lock_retry_timeout_s"));
                     forceUnlockAll(connection);
                     continue;
                 }
-                log.info("Блокировка недоступна. Повтор через {} мс.", RETRY_DELAY_MS);
-                Thread.sleep(RETRY_DELAY_MS);
+                log.info("Блокировка недоступна. Повтор через {} мс.", PropertiesUtils.getProperty("migrations.lock_retry_delay_ms"));
+                Thread.sleep(Long.parseLong(PropertiesUtils.getProperty("migrations.lock_retry_delay_ms")));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new SQLException("Процесс блокировки был прерван", e);

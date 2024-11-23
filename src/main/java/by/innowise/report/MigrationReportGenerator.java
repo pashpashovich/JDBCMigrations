@@ -28,8 +28,8 @@ import java.util.List;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class MigrationReportGenerator {
 
-    public static final String SELECT_VERSION_DESCRIPTION_SUCCESS_REVERTED_APPLIED_AT_FROM_MIGRATION_HISTORY_ORDER_BY_APPLIED_AT = "SELECT version, description, success, reverted, applied_at FROM migration_history ORDER BY applied_at";
-    public static final String SELECT_VERSION_DESCRIPTION_SUCCESS_REVERTED_APPLIED_AT_FROM_MIGRATION_HISTORY_ORDER_BY_APPLIED_AT1 = "SELECT version, description, success, reverted, applied_at FROM migration_history ORDER BY applied_at";
+    private static final String SELECT_VERSION_DESCRIPTION_SUCCESS_REVERTED_APPLIED_AT_FROM_MIGRATION_HISTORY_ORDER_BY_APPLIED_AT = "SELECT version, description, success, reverted, applied_at FROM migration_history ORDER BY applied_at";
+    private static final String SELECT_VERSION_DESCRIPTION_SUCCESS_REVERTED_APPLIED_AT_FROM_MIGRATION_HISTORY_ORDER_BY_APPLIED_AT1 = "SELECT version, description, success, reverted, applied_at FROM migration_history ORDER BY applied_at";
     private static final String REPORTS_DIRECTORY = "reports";
 
     /**

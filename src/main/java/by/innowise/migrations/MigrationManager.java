@@ -1,6 +1,7 @@
 package by.innowise.migrations;
 
 import by.innowise.db.ConnectionManager;
+import by.innowise.db.PropertiesUtils;
 import by.innowise.exception.MigrationException;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -28,32 +29,31 @@ import static by.innowise.migrations.MigrationExecutor.unlockDatabase;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class MigrationManager {
 
-    public static final String DIRECTORY_PATH = "migrations/";
-    public static final String VERSION = "version";
-    public static final String UPDATE_MIGRATION_HISTORY = """
+    private static final String VERSION = "version";
+    private static final String UPDATE_MIGRATION_HISTORY = """
                 UPDATE migration_history
                 SET reverted = TRUE
                 WHERE applied_at > ?;
             """;
-    public static final String SELECT_APPLIED = "SELECT applied_at FROM migration_history WHERE version = ? AND reverted = FALSE";
-    public static final String BY_VERSION_DESC_LIMIT = """
+    private static final String SELECT_APPLIED = "SELECT applied_at FROM migration_history WHERE version = ? AND reverted = FALSE";
+    private static final String BY_VERSION_DESC_LIMIT = """
                 SELECT id, version
                 FROM migration_history
                 WHERE reverted = FALSE
                 ORDER BY version DESC
                 LIMIT ?;
             """;
-    public static final String CURRENT_VERSION_QUERY = """
+    private static final String CURRENT_VERSION_QUERY = """
                 SELECT version FROM migration_history
                 WHERE reverted = FALSE
                 ORDER BY version DESC LIMIT 1
             """;
-    public static final String ALL_MIGRATIONS_QUERY = """
+    private static final String ALL_MIGRATIONS_QUERY = """
                 SELECT version, description, applied_at, reverted FROM migration_history
                 WHERE reverted = FALSE
                 ORDER BY applied_at
             """;
-    public static final String CREATE_TABLE_SQL = """
+    private static final String CREATE_TABLE_SQL = """
                 CREATE TABLE IF NOT EXISTS migration_history (
                     id SERIAL PRIMARY KEY,
                     version VARCHAR(50) NOT NULL UNIQUE,
@@ -66,7 +66,7 @@ public class MigrationManager {
                     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """;
-    public static final String DROP_TABLES_SQL = """
+    private static final String DROP_TABLES_SQL = """
                 DO $$
                 DECLARE
                     r RECORD;
@@ -76,8 +76,9 @@ public class MigrationManager {
                     END LOOP;
                 END $$;
             """;
-    public static final String UPDATE_MIGRATION_HISTORY_SET_REVERTED_TRUE_WHERE_VERSION = "UPDATE migration_history SET reverted = TRUE WHERE version > ?";
-    public static final String SELECT_COUNT_FROM_MIGRATION_HISTORY_WHERE_VERSION_AND_REVERTED_FALSE = "SELECT COUNT(*) FROM migration_history WHERE version = ? AND reverted = FALSE";
+    private static final String UPDATE_MIGRATION_HISTORY_SET_REVERTED_TRUE_WHERE_VERSION = "UPDATE migration_history SET reverted = TRUE WHERE version > ?";
+    private static final String SELECT_COUNT_FROM_MIGRATION_HISTORY_WHERE_VERSION_AND_REVERTED_FALSE = "SELECT COUNT(*) FROM migration_history WHERE version = ? AND reverted = FALSE";
+    private static final String MIGRATIONS_DIR = "migrations.dir";
 
     /**
      * Метод, который выполняет не примененные миграции к БД
@@ -87,7 +88,7 @@ public class MigrationManager {
             connection.setAutoCommit(false);
             lockDatabase(connection);
             ensureHistoryTableExists(connection);
-            List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
+            List<File> migrationFiles = MigrationFileReader.getMigrationFiles(PropertiesUtils.getProperty(MIGRATIONS_DIR));
             for (File file : migrationFiles) {
                 if (!isMigrationApplied(connection, file)) {
                     applyMigration(connection, file);
@@ -113,7 +114,7 @@ public class MigrationManager {
             lockDatabase(connection);
             clearDatabase(connection);
             ensureHistoryTableExists(connection);
-            List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
+            List<File> migrationFiles = MigrationFileReader.getMigrationFiles(PropertiesUtils.getProperty(MIGRATIONS_DIR));
             for (File file : migrationFiles) {
                 String version = MigrationFileReader.extractVersion(file);
                 if (version.compareTo(tag) > 0) {
@@ -145,7 +146,7 @@ public class MigrationManager {
             Timestamp rollbackTimestamp = parseDateToTimestamp(date);
             clearDatabase(connection);
             ensureHistoryTableExists(connection);
-            List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
+            List<File> migrationFiles = MigrationFileReader.getMigrationFiles(PropertiesUtils.getProperty(MIGRATIONS_DIR));
             for (File file : migrationFiles) {
                 String version = MigrationFileReader.extractVersion(file);
                 applyMigrations(file, connection, version, rollbackTimestamp);
@@ -188,7 +189,7 @@ public class MigrationManager {
                     }
                     clearDatabase(connection);
                     ensureHistoryTableExists(connection);
-                    List<File> migrationFiles = MigrationFileReader.getMigrationFiles(DIRECTORY_PATH);
+                    List<File> migrationFiles = MigrationFileReader.getMigrationFiles(PropertiesUtils.getProperty(MIGRATIONS_DIR));
                     for (File file : migrationFiles) {
                         String version = MigrationFileReader.extractVersion(file);
                         if (!versionsToRollback.contains(version) && isMigrationApplied(connection, file)) {
