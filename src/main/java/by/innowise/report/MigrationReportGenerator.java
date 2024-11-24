@@ -90,11 +90,6 @@ public class MigrationReportGenerator {
         log.info("JSON отчет о миграциях успешно создан: {}", jsonPath.toAbsolutePath());
     }
 
-    /**
-     * Проверяет, существует ли директория для отчетов, и создает ее, если не существует
-     *
-     * @throws IOException - ошибка при создании директории
-     */
     private static void ensureReportsDirectoryExists() throws IOException {
         Path reportsPath = Paths.get(REPORTS_DIRECTORY);
         if (!Files.exists(reportsPath)) {

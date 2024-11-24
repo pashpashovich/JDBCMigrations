@@ -12,6 +12,10 @@ import java.sql.SQLException;
 @Slf4j
 public class MigrationTool {
 
+    /**
+     * Метод, представляющий собой стартовую точку приложения
+     * @param args - параметры командной строки (CLI)
+     */
     public static void main(String[] args) {
         if (args.length == 0) {
             log.info("Команды: migrate, rollback, rollback-to-date, rollback-count, info,report_csv,report_json");
@@ -30,7 +34,7 @@ public class MigrationTool {
         }
     }
 
-    public static void executeCommand(String[] args) throws SQLException, IOException {
+    private static void executeCommand(String[] args) throws SQLException, IOException {
         Command command = Command.fromString(args[0]);
         switch (command) {
             case MIGRATE:
